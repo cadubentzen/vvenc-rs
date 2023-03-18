@@ -1,113 +1,96 @@
+pub(crate) use libvvenc_sys as ffi;
+
+mod error;
+pub(crate) use error::FFIStatusToResult;
+
+mod chroma_format;
+mod config;
+mod encoder;
+mod encoder_output;
+mod preset;
+mod slice_type;
+mod yuv_buffer;
+
+pub use chroma_format::ChromaFormat;
+pub use config::Config;
+pub use encoder::Encoder;
+pub use encoder_output::{EncoderOutput, EncoderOutputData};
+pub use error::Error;
+pub use preset::Preset;
+pub use slice_type::SliceType;
+pub use yuv_buffer::{YUVBuffer, YUVPlane};
+
 #[cfg(test)]
 mod tests {
-    use libvvenc_sys as ffi;
-    use std::mem::MaybeUninit;
+    use super::*;
 
     #[test]
-    fn it_works() {
-        let mut params = MaybeUninit::uninit();
-
-        const WIDTH: i32 = 1280;
-        const HEIGHT: i32 = 720;
+    fn basic() {
+        let width = 1280;
+        let height = 720;
         let framerate = 30;
         let bitrate = 2_000_000;
-        let qp = 23;
-        let preset = ffi::vvencPresetMode_VVENC_MEDIUM;
+        let qp = 32;
+        let preset = Preset::Medium;
 
-        let res = unsafe {
-            ffi::vvenc_init_default(
-                params.as_mut_ptr(),
-                WIDTH,
-                HEIGHT,
-                framerate,
-                bitrate,
-                qp,
-                preset,
-            )
-        };
-        assert_eq!(res, ffi::ErrorCodes_VVENC_OK);
+        let mut config = Config::new(width, height, framerate, bitrate, qp, preset).unwrap();
+        let mut encoder = Encoder::with_config(&mut config).unwrap();
 
-        // SAFETY: vvenc_init_default initialized params
-        let mut params = unsafe { params.assume_init() };
+        let mut y_plane = Vec::with_capacity((width * height) as usize);
+        let mut u_plane = Vec::with_capacity((width * height) as usize >> 1);
+        let mut v_plane = Vec::with_capacity((width * height) as usize >> 1);
 
-        let encoder = unsafe { ffi::vvenc_encoder_create() };
+        // A black frame
+        y_plane.resize((width * height) as usize, 0);
+        u_plane.resize((width * height) as usize >> 1, 0);
+        v_plane.resize((width * height) as usize >> 1, 0);
 
-        let res = unsafe { ffi::vvenc_encoder_open(encoder, &mut params as *mut _) };
-        assert_eq!(res, ffi::ErrorCodes_VVENC_OK);
-
-        let mut y_plane = Vec::with_capacity((WIDTH * HEIGHT) as usize);
-        let mut u_plane = Vec::with_capacity((WIDTH * HEIGHT) as usize >> 1);
-        let mut v_plane = Vec::with_capacity((WIDTH * HEIGHT) as usize >> 1);
-
-        y_plane.resize((WIDTH * HEIGHT) as usize, 0);
-        u_plane.resize((WIDTH * HEIGHT) as usize >> 1, 0);
-        v_plane.resize((WIDTH * HEIGHT) as usize >> 1, 0);
-
-        let mut yuvbuf = ffi::vvencYUVBuffer {
+        let yuv_buffer = YUVBuffer {
             planes: [
-                ffi::vvencYUVPlane {
-                    ptr: y_plane.as_mut_ptr(),
-                    width: WIDTH,
-                    height: HEIGHT,
-                    stride: WIDTH,
+                YUVPlane {
+                    buffer: &y_plane,
+                    width,
+                    height,
+                    stride: width,
                 },
-                ffi::vvencYUVPlane {
-                    ptr: u_plane.as_mut_ptr(),
-                    width: WIDTH >> 1,
-                    height: HEIGHT >> 1,
-                    stride: WIDTH >> 1,
+                YUVPlane {
+                    buffer: &u_plane,
+                    width: width >> 1,
+                    height: height >> 1,
+                    stride: width >> 1,
                 },
-                ffi::vvencYUVPlane {
-                    ptr: v_plane.as_mut_ptr(),
-                    width: WIDTH >> 1,
-                    height: HEIGHT >> 1,
-                    stride: WIDTH >> 1,
+                YUVPlane {
+                    buffer: &v_plane,
+                    width: width >> 1,
+                    height: height >> 1,
+                    stride: width >> 1,
                 },
             ],
-            sequenceNumber: 0,
-            cts: 0,
-            ctsValid: true,
+            sequence_number: 0,
+            composition_timestamp: Some(0),
         };
 
-        let au = unsafe { ffi::vvenc_accessUnit_alloc() };
-
-        let au_size_scale =
-            if params.m_internChromaFormat <= ffi::vvencChromaFormat_VVENC_CHROMA_420 {
-                2
-            } else {
-                3
-            };
-
-        unsafe {
-            ffi::vvenc_accessUnit_alloc_payload(
-                au,
-                au_size_scale * params.m_SourceWidth * params.m_SourceHeight + 1024,
-            );
-        }
-
-        let mut enc_done = false;
-        let res = unsafe { ffi::vvenc_encode(encoder, &mut yuvbuf, au, &mut enc_done) };
-        assert_eq!(res, ffi::ErrorCodes_VVENC_OK);
-
-        while !enc_done {
-            let res =
-                unsafe { ffi::vvenc_encode(encoder, std::ptr::null_mut(), au, &mut enc_done) };
-            assert_eq!(res, ffi::ErrorCodes_VVENC_OK);
-            let au = &mut unsafe { *au };
-            if au.payloadUsedSize > 0 {
-                println!("yay, got frame!");
-                println!(
-                    "{}",
-                    unsafe { std::ffi::CStr::from_ptr(au.infoString.as_ptr()) }
-                        .to_str()
-                        .unwrap()
-                )
+        let mut encoding_done = false;
+        match encoder.encode(Some(&yuv_buffer)).unwrap() {
+            EncoderOutput::None => println!("No output yet"),
+            EncoderOutput::Data(data) => println!("{:?}", data),
+            EncoderOutput::EncodingDone(data) => {
+                println!("{:?}", data);
+                encoding_done = true;
             }
         }
 
-        unsafe {
-            ffi::vvenc_encoder_close(encoder);
-            ffi::vvenc_accessUnit_free(au, true);
-        };
+        while !encoding_done {
+            match encoder.encode(None).unwrap() {
+                EncoderOutput::None => println!("No output yet"),
+                EncoderOutput::Data(data) => println!("{:?}", data),
+                EncoderOutput::EncodingDone(data) => {
+                    println!("{:?}", data);
+                    encoding_done = true;
+                }
+            }
+        }
+
+        println!("encoding done!");
     }
 }
