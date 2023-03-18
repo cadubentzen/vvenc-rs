@@ -10,4 +10,4 @@ libvvenc-sys = { path = "libvvenc-sys", version = "0.1.0" }
 thiserror = "1.0.37"
 
 [workspace]
-members = [ "vvencli" ]
+members = ["vvencli"]
