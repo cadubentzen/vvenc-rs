@@ -1,9 +1,9 @@
 use crate::*;
 
+type EncodingDone = bool;
 pub enum EncoderOutput<'a> {
     None,
-    Data(EncoderOutputData<'a>),
-    EncodingDone(EncoderOutputData<'a>),
+    Data(EncoderOutputData<'a>, EncodingDone),
 }
 
 #[derive(Debug)]

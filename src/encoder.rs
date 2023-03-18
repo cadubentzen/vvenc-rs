@@ -53,11 +53,7 @@ impl Encoder {
 
         if self.ffi_access_unit.payloadUsedSize > 0 {
             let data = self.get_encoder_output_data(yuv_buffer);
-            if enc_done {
-                Ok(EncoderOutput::EncodingDone(data))
-            } else {
-                Ok(EncoderOutput::Data(data))
-            }
+            Ok(EncoderOutput::Data(data, enc_done))
         } else {
             Ok(EncoderOutput::None)
         }

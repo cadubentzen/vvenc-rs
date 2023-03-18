@@ -22,6 +22,9 @@ pub use yuv_buffer::{YUVBuffer, YUVPlane};
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::Write;
+
     use super::*;
 
     #[test]
@@ -40,7 +43,7 @@ mod tests {
         let mut u_plane = Vec::with_capacity((width * height) as usize >> 1);
         let mut v_plane = Vec::with_capacity((width * height) as usize >> 1);
 
-        // A black frame
+        // A green frame
         y_plane.resize((width * height) as usize, 0);
         u_plane.resize((width * height) as usize >> 1, 0);
         v_plane.resize((width * height) as usize >> 1, 0);
@@ -70,25 +73,23 @@ mod tests {
             composition_timestamp: Some(0),
         };
 
-        let mut encoding_done = false;
-        match encoder.encode(Some(&yuv_buffer)).unwrap() {
-            EncoderOutput::None => println!("No output yet"),
-            EncoderOutput::Data(data) => println!("{:?}", data),
-            EncoderOutput::EncodingDone(data) => {
-                println!("{:?}", data);
-                encoding_done = true;
-            }
-        }
+        let mut output_file = File::create("test.vvc").unwrap();
 
-        while !encoding_done {
-            match encoder.encode(None).unwrap() {
-                EncoderOutput::None => println!("No output yet"),
-                EncoderOutput::Data(data) => println!("{:?}", data),
-                EncoderOutput::EncodingDone(data) => {
-                    println!("{:?}", data);
-                    encoding_done = true;
-                }
+        let mut encode = |buffer| match encoder.encode(buffer).unwrap() {
+            EncoderOutput::None => {
+                println!("No output yet");
+                false
             }
+            EncoderOutput::Data(data, done) => {
+                println!("got output!");
+                assert_eq!(output_file.write(data.payload).unwrap(), data.payload.len());
+                done
+            }
+        };
+
+        let mut encoding_done = encode(Some(&yuv_buffer));
+        while !encoding_done {
+            encoding_done = encode(None);
         }
 
         println!("encoding done!");
