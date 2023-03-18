@@ -10,11 +10,13 @@ pub struct Encoder {
 }
 
 impl Encoder {
-    pub fn with_config(config: &mut Config) -> Result<Self, Error> {
+    pub fn with_config(mut config: Config) -> Result<Self, Error> {
         let ffi_encoder = unsafe { ffi::vvenc_encoder_create() };
         unsafe { ffi::vvenc_encoder_open(ffi_encoder, &mut config.ffi_config) }.to_result()?;
 
-        let au_size_scale = get_access_unit_size_scale(config);
+        let config = Self::ffi_get_config(ffi_encoder)?;
+
+        let au_size_scale = get_access_unit_size_scale(&config);
         let output_buffer_size =
             (au_size_scale * config.source_width() * config.source_height() + 1024) as usize;
 
@@ -94,6 +96,21 @@ impl Encoder {
             temporal_layer: self.ffi_access_unit.temporalLayer,
         }
     }
+
+    pub fn get_config(&self) -> Config {
+        Self::ffi_get_config(self.ffi_encoder).expect("encoder should have been initialized")
+    }
+
+    fn ffi_get_config(ffi_encoder: *mut ffi::vvencEncoder) -> Result<Config, Error> {
+        let mut ffi_config = MaybeUninit::uninit();
+
+        unsafe { ffi::vvenc_get_config(ffi_encoder, ffi_config.as_mut_ptr()) }.to_result()?;
+
+        Ok(Config {
+            // SAFETY: vvenc_get_config has filled the config
+            ffi_config: unsafe { ffi_config.assume_init() },
+        })
+    }
 }
 
 impl Drop for Encoder {
@@ -105,11 +122,7 @@ impl Drop for Encoder {
 }
 
 fn get_access_unit_size_scale(config: &Config) -> i32 {
-    if config
-        .internal_chroma_format()
-        .unwrap_or(ChromaFormat::Chroma444)
-        <= ChromaFormat::Chroma420
-    {
+    if config.internal_chroma_format().unwrap() <= ChromaFormat::Chroma420 {
         2
     } else {
         3

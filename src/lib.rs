@@ -36,8 +36,8 @@ mod tests {
         let qp = 32;
         let preset = Preset::Medium;
 
-        let mut config = Config::new(width, height, framerate, bitrate, qp, preset).unwrap();
-        let mut encoder = Encoder::with_config(&mut config).unwrap();
+        let config = Config::new(width, height, framerate, bitrate, qp, preset).unwrap();
+        let mut encoder = Encoder::with_config(config).unwrap();
 
         let mut y_plane = Vec::with_capacity((width * height) as usize);
         let mut u_plane = Vec::with_capacity((width * height) as usize >> 1);
