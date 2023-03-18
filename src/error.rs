@@ -1,24 +1,25 @@
 use crate::*;
+use thiserror::Error;
 
 pub(crate) const RETURN_OK: i32 = ffi::ErrorCodes_VVENC_OK;
 
-#[derive(Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq)]
 pub enum Error {
-    /// unspecified malfunction
+    #[error("unspecified malfunction")]
     Unspecified,
-    /// encoder not initialized or tried to initialize multiple times
+    #[error("encoder not initialized or tried to initialize multiple times")]
     Initialize,
-    /// internal allocation error
+    #[error("internal allocation error")]
     Allocate,
-    /// allocated memory to small to receive encoded data. After allocating sufficient memory the failed call can be repeated.
+    #[error("allocated memory to small to receive encoded data. After allocating sufficient memory the failed call can be repeated.")]
     NotEnoughMem,
-    /// inconsistent or invalid parameters
+    #[error("inconsistent or invalid parameters")]
     Parameter,
-    /// unsupported request
+    #[error("unsupported request")]
     NotSupported,
-    /// encoder requires restart
+    #[error("encoder requires restart")]
     RestartRequired,
-    /// unsupported CPU SSE 4.1 needed
+    #[error("unsupported CPU SSE 4.1 needed")]
     Cpu,
 }
 
