@@ -20,8 +20,7 @@ impl Encoder {
         let output_buffer_size =
             (au_size_scale * config.source_width() * config.source_height() + 1024) as usize;
 
-        let mut output_buffer = Vec::with_capacity(output_buffer_size);
-        output_buffer.resize(output_buffer_size, 0);
+        let mut output_buffer = vec![0; output_buffer_size];
 
         let mut ffi_access_unit = MaybeUninit::uninit();
         unsafe {
