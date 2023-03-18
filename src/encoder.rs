@@ -4,6 +4,7 @@ use crate::*;
 
 pub struct Encoder {
     ffi_encoder: *mut ffi::vvencEncoder,
+    #[allow(unused)] // It's used indirectly through unsafe
     output_buffer: Vec<u8>,
     ffi_access_unit: ffi::vvencAccessUnit,
 }
