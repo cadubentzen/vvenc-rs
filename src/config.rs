@@ -31,7 +31,7 @@ impl ConfigBuilder {
         bitrate: i32,
         qp: i32,
         preset: Preset,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         unsafe {
             ffi::vvenc_init_default(
                 &mut self.ffi_config,
@@ -66,8 +66,11 @@ impl Config {
         self.ffi_config.m_SourceHeight
     }
 
-    pub fn internal_chroma_format(&self) -> Result<ChromaFormat, u32> {
-        self.ffi_config.m_internChromaFormat.try_into()
+    pub fn internal_chroma_format(&self) -> ChromaFormat {
+        match self.ffi_config.m_internChromaFormat.try_into() {
+            Ok(chroma_format) => chroma_format,
+            Err(ffi_chroma_format) => panic!("chroma format {} from libvvenc not enumerated by this crate. Please file an issue.", ffi_chroma_format),
+        }
     }
 }
 

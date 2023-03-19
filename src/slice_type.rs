@@ -10,7 +10,7 @@ pub enum SliceType {
 impl TryFrom<u32> for SliceType {
     type Error = u32;
 
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
         match value {
             ffi::vvencSliceType_VVENC_B_SLICE => Ok(Self::B),
             ffi::vvencSliceType_VVENC_P_SLICE => Ok(Self::P),

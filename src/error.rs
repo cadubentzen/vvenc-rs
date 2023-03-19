@@ -26,7 +26,7 @@ pub enum Error {
 impl TryFrom<i32> for Error {
     type Error = i32;
 
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
         match value {
             ffi::ErrorCodes_VVENC_ERR_UNSPECIFIED => Ok(Self::Unspecified),
             ffi::ErrorCodes_VVENC_ERR_INITIALIZE => Ok(Self::Initialize),
@@ -42,11 +42,11 @@ impl TryFrom<i32> for Error {
 }
 
 pub(crate) trait FFIStatusToResult {
-    fn to_result(self) -> Result<(), Error>;
+    fn to_result(self) -> Result<()>;
 }
 
 impl FFIStatusToResult for i32 {
-    fn to_result(self) -> Result<(), Error> {
+    fn to_result(self) -> Result<()> {
         if self == crate::error::RETURN_OK {
             Ok(())
         } else {

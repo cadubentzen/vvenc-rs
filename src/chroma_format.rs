@@ -11,7 +11,7 @@ pub enum ChromaFormat {
 impl TryFrom<u32> for ChromaFormat {
     type Error = u32;
 
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> std::result::Result<Self, Self::Error> {
         match value {
             ffi::vvencChromaFormat_VVENC_CHROMA_400 => Ok(ChromaFormat::Chroma400),
             ffi::vvencChromaFormat_VVENC_CHROMA_420 => Ok(ChromaFormat::Chroma420),

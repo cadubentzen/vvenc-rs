@@ -10,7 +10,7 @@ pub struct Encoder {
 }
 
 impl Encoder {
-    pub fn with_config(mut config: ConfigBuilder) -> Result<Self, Error> {
+    pub fn with_config(mut config: ConfigBuilder) -> Result<Self> {
         let ffi_encoder = unsafe { ffi::vvenc_encoder_create() };
         unsafe { ffi::vvenc_encoder_open(ffi_encoder, &mut config.ffi_config) }.to_result()?;
         // We should drop the config builder at this point. To be able to access the config,
@@ -41,10 +41,7 @@ impl Encoder {
         })
     }
 
-    pub fn encode<'a>(
-        &mut self,
-        yuv_buffer: Option<&'a YUVBuffer>,
-    ) -> Result<EncoderOutput<'a>, Error> {
+    pub fn encode<'a>(&mut self, yuv_buffer: Option<&'a YUVBuffer>) -> Result<EncoderOutput<'a>> {
         let mut enc_done = false;
         unsafe {
             ffi::vvenc_encode(
@@ -103,7 +100,7 @@ impl Encoder {
         Self::ffi_get_config(self.ffi_encoder).expect("encoder should have been initialized")
     }
 
-    fn ffi_get_config(ffi_encoder: *mut ffi::vvencEncoder) -> Result<Config, Error> {
+    fn ffi_get_config(ffi_encoder: *mut ffi::vvencEncoder) -> Result<Config> {
         let mut ffi_config = MaybeUninit::uninit();
 
         unsafe { ffi::vvenc_get_config(ffi_encoder, ffi_config.as_mut_ptr()) }.to_result()?;
@@ -124,7 +121,7 @@ impl Drop for Encoder {
 }
 
 fn get_access_unit_size_scale(config: &Config) -> i32 {
-    if config.internal_chroma_format().unwrap() <= ChromaFormat::Chroma420 {
+    if config.internal_chroma_format() <= ChromaFormat::Chroma420 {
         2
     } else {
         3

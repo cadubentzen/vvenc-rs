@@ -1,7 +1,9 @@
 pub(crate) use libvvenc_sys as ffi;
 
 mod error;
+pub use error::Error;
 pub(crate) use error::FFIStatusToResult;
+pub type Result<T> = std::result::Result<T, Error>;
 
 mod chroma_format;
 mod config;
@@ -15,7 +17,6 @@ pub use chroma_format::ChromaFormat;
 pub use config::{Config, ConfigBuilder};
 pub use encoder::Encoder;
 pub use encoder_output::{EncoderOutput, EncoderOutputData};
-pub use error::Error;
 pub use preset::Preset;
 pub use slice_type::SliceType;
 pub use yuv_buffer::{YUVBuffer, YUVPlane};
