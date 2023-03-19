@@ -38,6 +38,18 @@ impl ConfigBuilder {
         })
     }
 
+    pub fn with_logging_handler<L: LoggingHandler>(mut self, handler: L) -> Self {
+        let callback = Box::new(LoggingCallback::new(handler));
+        unsafe {
+            ffi::vvenc_set_msg_callback(
+                &mut self.ffi_config,
+                Box::into_raw(callback) as *mut core::ffi::c_void,
+                Some(LoggingCallback::<L>::c_callback),
+            )
+        }
+        self
+    }
+
     pub fn with_ticks_per_second(mut self, ticks_per_second: i32) -> Self {
         self.ffi_config.m_TicksPerSecond = ticks_per_second;
         self

@@ -10,6 +10,7 @@ pub(crate) use internal_traits::*;
 pub mod config;
 mod encoder;
 mod encoder_output;
+mod logging_callback;
 mod slice_type;
 mod yuv_buffer;
 
@@ -17,6 +18,8 @@ pub use config::ConfigBuilder;
 use config::*;
 pub use encoder::Encoder;
 pub use encoder_output::{EncoderOutput, EncoderOutputData};
+pub(crate) use logging_callback::LoggingCallback;
+pub use logging_callback::LoggingHandler;
 use slice_type::SliceType;
 pub use yuv_buffer::{YUVBuffer, YUVPlane};
 

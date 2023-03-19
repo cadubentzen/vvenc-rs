@@ -16,6 +16,13 @@ struct Args {
     output: PathBuf,
 }
 
+struct Logger;
+impl vvenc::LoggingHandler for Logger {
+    fn handle_message(&self, verbosity: vvenc::config::Verbosity, message: String) {
+        println!("[{:?}] {}", verbosity, message);
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -42,7 +49,9 @@ fn main() -> Result<()> {
     let qp = 32;
     let preset = vvenc::config::Preset::Medium;
 
-    let config = vvenc::ConfigBuilder::with_default(width, height, framerate, bitrate, qp, preset)?;
+    let config = vvenc::ConfigBuilder::with_default(width, height, framerate, bitrate, qp, preset)?
+        .with_verbosity(vvenc::config::Verbosity::Verbose)
+        .with_logging_handler(Logger);
     let mut vvc_encoder = vvenc::Encoder::with_config(config)?;
 
     let mut input_frame_num = 0;

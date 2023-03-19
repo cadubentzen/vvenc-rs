@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 libvvenc-sys = { path = "libvvenc-sys", version = "0.1.0" }
 thiserror = "1.0.37"
+vsprintf = "2.0.0"
 
 [workspace]
 members = ["vvencli"]

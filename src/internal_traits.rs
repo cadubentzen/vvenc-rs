@@ -23,3 +23,10 @@ impl FFIStatusToResult for i32 {
 pub trait IntoFFI<T> {
     fn into_ffi(self) -> T;
 }
+
+pub trait TryFromFFI<T>
+where
+    Self: Sized,
+{
+    fn try_from_ffi(value: T) -> std::result::Result<Self, T>;
+}
