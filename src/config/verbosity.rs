@@ -11,9 +11,9 @@ pub enum Verbosity {
     Details,
 }
 
-impl From<Verbosity> for u32 {
-    fn from(value: Verbosity) -> Self {
-        match value {
+impl IntoFFI<u32> for Verbosity {
+    fn into_ffi(self) -> u32 {
+        match self {
             Verbosity::Silent => ffi::vvencMsgLevel_VVENC_SILENT,
             Verbosity::Error => ffi::vvencMsgLevel_VVENC_ERROR,
             Verbosity::Warning => ffi::vvencMsgLevel_VVENC_WARNING,

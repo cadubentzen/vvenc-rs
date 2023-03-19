@@ -6,9 +6,9 @@ pub enum Tier {
     High,
 }
 
-impl From<Tier> for u32 {
-    fn from(value: Tier) -> Self {
-        match value {
+impl IntoFFI<u32> for Tier {
+    fn into_ffi(self) -> u32 {
+        match self {
             Tier::Main => ffi::vvencTier_VVENC_TIER_MAIN,
             Tier::High => ffi::vvencTier_VVENC_TIER_HIGH,
         }

@@ -1,4 +1,4 @@
-use crate::ffi;
+use crate::*;
 
 pub enum Preset {
     Faster,
@@ -10,9 +10,9 @@ pub enum Preset {
     ToolTest,
 }
 
-impl From<Preset> for i32 {
-    fn from(value: Preset) -> Self {
-        match value {
+impl IntoFFI<i32> for Preset {
+    fn into_ffi(self) -> i32 {
+        match self {
             Preset::Faster => ffi::vvencPresetMode_VVENC_FASTER,
             Preset::Fast => ffi::vvencPresetMode_VVENC_FAST,
             Preset::Medium => ffi::vvencPresetMode_VVENC_MEDIUM,

@@ -20,9 +20,9 @@ pub enum Level {
     Level15_5,
 }
 
-impl From<Level> for u32 {
-    fn from(value: Level) -> Self {
-        match value {
+impl IntoFFI<u32> for Level {
+    fn into_ffi(self) -> u32 {
+        match self {
             Level::Auto => ffi::vvencLevel_VVENC_LEVEL_AUTO,
             Level::Level1 => ffi::vvencLevel_VVENC_LEVEL1,
             Level::Level2 => ffi::vvencLevel_VVENC_LEVEL2,

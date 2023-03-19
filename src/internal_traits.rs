@@ -19,3 +19,7 @@ impl FFIStatusToResult for i32 {
         }
     }
 }
+
+pub trait IntoFFI<T> {
+    fn into_ffi(self) -> T;
+}

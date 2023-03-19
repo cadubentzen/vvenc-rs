@@ -40,7 +40,7 @@ impl ConfigBuilder {
                 framerate,
                 bitrate,
                 qp,
-                preset.into(),
+                preset.into_ffi(),
             )
         }
         .to_result()?;
@@ -75,22 +75,22 @@ impl ConfigBuilder {
     }
 
     pub fn with_verbosity(mut self, verbosity: Verbosity) -> Self {
-        self.ffi_config.m_verbosity = verbosity.into();
+        self.ffi_config.m_verbosity = verbosity.into_ffi();
         self
     }
 
     pub fn with_profile(mut self, profile: Profile) -> Self {
-        self.ffi_config.m_profile = profile.into();
+        self.ffi_config.m_profile = profile.into_ffi();
         self
     }
 
     pub fn with_level(mut self, level: Level) -> Self {
-        self.ffi_config.m_level = level.into();
+        self.ffi_config.m_level = level.into_ffi();
         self
     }
 
     pub fn with_tier(mut self, tier: Tier) -> Self {
-        self.ffi_config.m_levelTier = tier.into();
+        self.ffi_config.m_levelTier = tier.into_ffi();
         self
     }
 }

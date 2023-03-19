@@ -13,9 +13,9 @@ pub enum Profile {
     MultilayerMain10_444StillPicture,
 }
 
-impl From<Profile> for u32 {
-    fn from(value: Profile) -> Self {
-        match value {
+impl IntoFFI<u32> for Profile {
+    fn into_ffi(self) -> u32 {
+        match self {
             Profile::Auto => ffi::vvencProfile_VVENC_PROFILE_AUTO,
             Profile::Main10 => ffi::vvencProfile_VVENC_MAIN_10,
             Profile::Main10StillPicture => ffi::vvencProfile_VVENC_MAIN_10_STILL_PICTURE,
