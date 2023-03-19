@@ -2,8 +2,10 @@ pub(crate) use libvvenc_sys as ffi;
 
 mod error;
 pub use error::Error;
-pub(crate) use error::FFIStatusToResult;
 pub type Result<T> = std::result::Result<T, Error>;
+
+mod internal_traits;
+pub(crate) use internal_traits::*;
 
 pub mod config;
 mod encoder;
