@@ -1,6 +1,6 @@
 use crate::*;
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum ChromaFormat {
     Chroma400,
     Chroma420,

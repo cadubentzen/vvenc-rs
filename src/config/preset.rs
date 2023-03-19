@@ -1,5 +1,6 @@
 use crate::*;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Preset {
     Faster,
     Fast,
