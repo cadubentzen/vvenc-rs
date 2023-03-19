@@ -163,6 +163,10 @@ mod tests {
 
     #[test]
     fn it_works() {
-        ConfigBuilder::with_default(1280, 720, 30, 2_000_000, 23, Preset::Medium).unwrap();
+        ConfigBuilder::with_default(1280, 720, 30, 2_000_000, 23, Preset::Medium)
+            .unwrap()
+            .with_gop_size(120)
+            .with_profile(Profile::Main10)
+            .with_tier(Tier::Main);
     }
 }
