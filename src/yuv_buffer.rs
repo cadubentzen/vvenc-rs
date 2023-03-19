@@ -17,8 +17,7 @@ impl<'a> YUVPlane<'a> {
     pub(crate) fn to_ffi(&self) -> ffi::vvencYUVPlane {
         ffi::vvencYUVPlane {
             // this const -> mut cast should be OK if VVenC doesn't modify
-            // the buffer internally, which doesn't seem to be the case.
-            // VVenC internally copies the buffer.
+            // the buffer internally. It copies the buffer after being pushed.
             ptr: self.buffer.as_ptr() as *mut i16,
             width: self.width,
             height: self.height,

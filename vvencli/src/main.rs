@@ -40,7 +40,7 @@ fn main() -> Result<()> {
 
     let bitrate = 2_000_000;
     let qp = 32;
-    let preset = vvenc::Preset::Medium;
+    let preset = vvenc::config::Preset::Medium;
 
     let config =
         vvenc::Config::builder().with_default(width, height, framerate, bitrate, qp, preset)?;

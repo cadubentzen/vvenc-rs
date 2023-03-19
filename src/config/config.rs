@@ -46,6 +46,43 @@ impl ConfigBuilder {
         .to_result()?;
         Ok(self)
     }
+
+    pub fn with_ticks_per_second(mut self, ticks_per_second: i32) -> Self {
+        self.ffi_config.m_TicksPerSecond = ticks_per_second;
+        self
+    }
+
+    pub fn with_input_bit_depth(mut self, input_bit_depth: [i32; 2]) -> Self {
+        self.ffi_config.m_inputBitDepth[0] = input_bit_depth[0];
+        self.ffi_config.m_inputBitDepth[1] = input_bit_depth[1];
+        self
+    }
+
+    pub fn with_frames_to_be_encoded(mut self, num_frames: i32) -> Self {
+        self.ffi_config.m_framesToBeEncoded = num_frames;
+        self
+    }
+
+    pub fn with_num_threads(mut self, num_threads: i32) -> Self {
+        self.ffi_config.m_numThreads = num_threads;
+        self
+    }
+
+    pub fn with_num_tiles(mut self, num_columns: u32, num_rows: u32) -> Self {
+        self.ffi_config.m_numTileCols = num_columns;
+        self.ffi_config.m_numTileRows = num_rows;
+        self
+    }
+
+    pub fn with_verbosity(mut self, verbosity: Verbosity) -> Self {
+        self.ffi_config.m_verbosity = verbosity.into();
+        self
+    }
+
+    pub fn with_profile(mut self, profile: Profile) -> Self {
+        self.ffi_config.m_profile = profile.into();
+        self
+    }
 }
 
 impl Config {

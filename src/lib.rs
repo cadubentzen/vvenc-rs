@@ -5,20 +5,17 @@ pub use error::Error;
 pub(crate) use error::FFIStatusToResult;
 pub type Result<T> = std::result::Result<T, Error>;
 
-mod chroma_format;
-mod config;
+pub mod config;
 mod encoder;
 mod encoder_output;
-mod preset;
 mod slice_type;
 mod yuv_buffer;
 
-pub use chroma_format::ChromaFormat;
-pub use config::{Config, ConfigBuilder};
+pub use config::Config;
+use config::*;
 pub use encoder::Encoder;
 pub use encoder_output::{EncoderOutput, EncoderOutputData};
-pub use preset::Preset;
-pub use slice_type::SliceType;
+use slice_type::SliceType;
 pub use yuv_buffer::{YUVBuffer, YUVPlane};
 
 #[cfg(test)]
