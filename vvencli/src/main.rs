@@ -19,7 +19,8 @@ struct Args {
 struct Logger;
 impl vvenc::LoggingHandler for Logger {
     fn handle_message(&self, verbosity: vvenc::config::Verbosity, message: String) {
-        println!("[{:?}] {}", verbosity, message);
+        let verbosity = format!("{:?}", verbosity).to_uppercase();
+        println!("[{}] {}", verbosity, message);
     }
 }
 
