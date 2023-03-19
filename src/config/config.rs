@@ -93,6 +93,55 @@ impl ConfigBuilder {
         self.ffi_config.m_levelTier = tier.into_ffi();
         self
     }
+
+    pub fn with_intra_period(mut self, intra_period: i32) -> Self {
+        self.ffi_config.m_IntraPeriod = intra_period;
+        self
+    }
+
+    pub fn with_decoding_refresh_type(
+        mut self,
+        decoding_refresh_type: DecodingRefreshType,
+    ) -> Self {
+        self.ffi_config.m_DecodingRefreshType = decoding_refresh_type.into_ffi();
+        self
+    }
+
+    pub fn with_gop_size(mut self, gop_size: i32) -> Self {
+        self.ffi_config.m_GOPSize = gop_size;
+        self
+    }
+
+    pub fn with_perceptual_qp_adaption(mut self, use_qpa: bool) -> Self {
+        self.ffi_config.m_usePerceptQPA = use_qpa;
+        self
+    }
+
+    pub fn with_num_passes(mut self, num_passes: i32) -> Self {
+        self.ffi_config.m_RCNumPasses = num_passes;
+        self
+    }
+
+    pub fn with_current_pass(mut self, current_pass: i32) -> Self {
+        self.ffi_config.m_RCPass = current_pass;
+        self
+    }
+
+    pub fn with_internal_bit_depth(mut self, internal_bit_depth: [i32; 2]) -> Self {
+        self.ffi_config.m_internalBitDepth[0] = internal_bit_depth[0];
+        self.ffi_config.m_internalBitDepth[1] = internal_bit_depth[1];
+        self
+    }
+
+    pub fn with_hdr_mode(mut self, hdr_mode: HdrMode) -> Self {
+        self.ffi_config.m_HdrMode = hdr_mode.into_ffi();
+        self
+    }
+
+    pub fn with_segment_mode(mut self, segment_mode: SegmentMode) -> Self {
+        self.ffi_config.m_SegmentMode = segment_mode.into_ffi();
+        self
+    }
 }
 
 impl Config {
