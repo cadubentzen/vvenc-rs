@@ -42,7 +42,8 @@ fn main() -> Result<()> {
     let qp = 32;
     let preset = vvenc::Preset::Medium;
 
-    let config = vvenc::Config::new(width, height, framerate, bitrate, qp, preset)?;
+    let config =
+        vvenc::Config::builder().with_default(width, height, framerate, bitrate, qp, preset)?;
     let mut vvc_encoder = vvenc::Encoder::with_config(config)?;
 
     let mut input_frame_num = 0;

@@ -10,9 +10,12 @@ pub struct Encoder {
 }
 
 impl Encoder {
-    pub fn with_config(mut config: Config) -> Result<Self, Error> {
+    pub fn with_config(mut config: ConfigBuilder) -> Result<Self, Error> {
         let ffi_encoder = unsafe { ffi::vvenc_encoder_create() };
         unsafe { ffi::vvenc_encoder_open(ffi_encoder, &mut config.ffi_config) }.to_result()?;
+        // We should drop the config builder at this point. To be able to access the config,
+        // we should query it from the encoder.
+        drop(config);
 
         let config = Self::ffi_get_config(ffi_encoder)?;
 
@@ -105,10 +108,10 @@ impl Encoder {
 
         unsafe { ffi::vvenc_get_config(ffi_encoder, ffi_config.as_mut_ptr()) }.to_result()?;
 
-        Ok(Config {
+        Ok(Config::with_ffi(
             // SAFETY: vvenc_get_config has filled the config
-            ffi_config: unsafe { ffi_config.assume_init() },
-        })
+            unsafe { ffi_config.assume_init() },
+        ))
     }
 }
 

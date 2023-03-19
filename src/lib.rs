@@ -12,7 +12,7 @@ mod slice_type;
 mod yuv_buffer;
 
 pub use chroma_format::ChromaFormat;
-pub use config::Config;
+pub use config::{Config, ConfigBuilder};
 pub use encoder::Encoder;
 pub use encoder_output::{EncoderOutput, EncoderOutputData};
 pub use error::Error;
@@ -36,7 +36,9 @@ mod tests {
         let qp = 32;
         let preset = Preset::Medium;
 
-        let config = Config::new(width, height, framerate, bitrate, qp, preset).unwrap();
+        let config = Config::builder()
+            .with_default(width, height, framerate, bitrate, qp, preset)
+            .unwrap();
         let mut encoder = Encoder::with_config(config).unwrap();
 
         let mut y_plane = Vec::with_capacity((width * height) as usize);
