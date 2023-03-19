@@ -47,21 +47,25 @@ fn main() -> Result<()> {
 
     let mut input_frame_num = 0;
     let mut output_frame_num = 0;
+
+    let mut y_buffer = Vec::with_capacity((width * height) as usize);
+    let mut u_buffer = Vec::with_capacity(((width >> 1) * (height >> 1)) as usize);
+    let mut v_buffer = Vec::with_capacity(((width >> 1) * (height >> 1)) as usize);
     while let Ok(frame) = y4m_decoder.read_frame() {
         println!("processing input frame {}", input_frame_num);
 
         // Need to change this conversion below when adding support to formats other than yuv420p in the input
-        let u8_to_i16 = |buffer: &[u8]| {
-            buffer
+        let map_to_yuv_buffer = |input_buffer: &[u8], yuv_buffer: &mut Vec<i16>| {
+            yuv_buffer.clear();
+            input_buffer
                 .iter()
                 // we left-shift 2 bits due to VVenC expecting 10 bits, vs 8 bits on the input.
-                .map(|p| i16::from(*p) << 2)
-                .collect::<Vec<_>>()
+                .for_each(|sample| yuv_buffer.push(i16::from(*sample) << 2));
         };
 
-        let y_buffer = u8_to_i16(frame.get_y_plane());
-        let u_buffer = u8_to_i16(frame.get_u_plane());
-        let v_buffer = u8_to_i16(frame.get_v_plane());
+        map_to_yuv_buffer(frame.get_y_plane(), &mut y_buffer);
+        map_to_yuv_buffer(frame.get_u_plane(), &mut u_buffer);
+        map_to_yuv_buffer(frame.get_v_plane(), &mut v_buffer);
 
         let yuv_buffer = vvenc::YUVBuffer {
             planes: [
