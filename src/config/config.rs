@@ -83,6 +83,16 @@ impl ConfigBuilder {
         self.ffi_config.m_profile = profile.into();
         self
     }
+
+    pub fn with_level(mut self, level: Level) -> Self {
+        self.ffi_config.m_level = level.into();
+        self
+    }
+
+    pub fn with_tier(mut self, tier: Tier) -> Self {
+        self.ffi_config.m_levelTier = tier.into();
+        self
+    }
 }
 
 impl Config {
