@@ -1,4 +1,4 @@
-pub(crate) use libvvenc_sys as ffi;
+pub(crate) use vvenc_sys as ffi;
 
 mod error;
 pub use error::Error;

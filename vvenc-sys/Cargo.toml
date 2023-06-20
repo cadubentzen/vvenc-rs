@@ -1,0 +1,9 @@
+[package]
+name = "vvenc-sys"
+version = "0.0.1"
+edition = "2021"
+links = "vvenc"
+
+[build-dependencies]
+bindgen = "0.66"
+pkg-config = "0.3"
