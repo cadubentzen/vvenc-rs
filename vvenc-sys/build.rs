@@ -3,7 +3,10 @@ use std::path::PathBuf;
 fn main() {
     println!("cargo:rerun-if-changed=wrapper.h");
 
-    pkg_config::Config::new().atleast_version("1.7.0").probe("libvvenc").unwrap();
+    pkg_config::Config::new()
+        .atleast_version("1.8.0")
+        .probe("libvvenc")
+        .unwrap();
 
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
