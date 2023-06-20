@@ -2,8 +2,10 @@
 name = "vvenc"
 version = "0.0.1"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Carlos Bentzen <cadubentzen@gmail.com>"]
+description = "Rust bindings for VVenC"
+license = "BSD-3-Clause-Clear"
+repository = "https://github.com/cadubentzen/vvenc-rs"
 
 [dependencies]
 vvenc-sys = { path = "vvenc-sys", version = "0.0.1" }
