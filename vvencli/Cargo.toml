@@ -1,14 +1,14 @@
 [package]
 name = "vvencli"
-version = "0.0.1"
-edition = "2021"
-authors = ["Carlos Bentzen <cadubentzen@gmail.com>"]
+version = "0.1.0"
 description = "CLI app for VVenC"
-license = "BSD-3-Clause-Clear"
-repository = "https://github.com/cadubentzen/vvenc-rs"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-vvenc = { path = "..", version = "0.0.1" }
+vvenc = { path = "..", version = "0.1.0" }
 y4m = "0.8"
 anyhow = "1.0"
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }

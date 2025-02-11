@@ -1,101 +1,149 @@
-pub(crate) use vvenc_sys as ffi;
+use std::{
+    ptr,
+    sync::{Arc, Mutex},
+};
 
-mod error;
-pub use error::Error;
-pub type Result<T> = std::result::Result<T, Error>;
+use vvenc_sys::*;
 
-mod internal_traits;
-pub(crate) use internal_traits::*;
+#[derive(Debug, Clone)]
+pub struct Encoder {
+    inner: Arc<Mutex<InnerEncoder>>,
+}
 
-pub mod config;
-mod encoder;
-mod encoder_output;
-mod logging_callback;
-mod slice_type;
-mod yuv_buffer;
+#[derive(Debug)]
+struct InnerEncoder {
+    encoder: ptr::NonNull<vvencEncoder>,
+}
 
-pub use config::ConfigBuilder;
-use config::*;
-pub use encoder::Encoder;
-pub use encoder_output::{EncoderOutput, EncoderOutputData};
-pub(crate) use logging_callback::LoggingCallback;
-pub use logging_callback::LoggingHandler;
-use slice_type::SliceType;
-pub use yuv_buffer::{YUVBuffer, YUVPlane};
-
-#[cfg(test)]
-mod tests {
-    use std::fs::File;
-    use std::io::Write;
-
-    use super::*;
-
-    #[test]
-    fn basic() {
-        let width = 1280;
-        let height = 720;
-        let framerate = 30;
-        let bitrate = 2_000_000;
-        let qp = 32;
-        let preset = Preset::Medium;
-
-        let config =
-            ConfigBuilder::with_default(width, height, framerate, bitrate, qp, preset).unwrap();
-        let mut encoder = Encoder::with_config(config).unwrap();
-
-        let mut y_plane = Vec::with_capacity((width * height) as usize);
-        let mut u_plane = Vec::with_capacity((width * height) as usize >> 1);
-        let mut v_plane = Vec::with_capacity((width * height) as usize >> 1);
-
-        // A green frame
-        y_plane.resize((width * height) as usize, 0);
-        u_plane.resize((width * height) as usize >> 1, 0);
-        v_plane.resize((width * height) as usize >> 1, 0);
-
-        let yuv_buffer = YUVBuffer {
-            planes: [
-                YUVPlane {
-                    buffer: &y_plane,
-                    width,
-                    height,
-                    stride: width,
-                },
-                YUVPlane {
-                    buffer: &u_plane,
-                    width: width >> 1,
-                    height: height >> 1,
-                    stride: width >> 1,
-                },
-                YUVPlane {
-                    buffer: &v_plane,
-                    width: width >> 1,
-                    height: height >> 1,
-                    stride: width >> 1,
-                },
-            ],
-            sequence_number: 0,
-            composition_timestamp: Some(0),
-        };
-
-        let mut output_file = File::create("test.vvc").unwrap();
-
-        let mut encode = |buffer| match encoder.encode(buffer).unwrap() {
-            EncoderOutput::None => {
-                println!("No output yet");
-                false
-            }
-            EncoderOutput::Data(data, done) => {
-                println!("got output!");
-                assert_eq!(output_file.write(data.payload).unwrap(), data.payload.len());
-                done
-            }
-        };
-
-        let mut encoding_done = encode(Some(&yuv_buffer));
-        while !encoding_done {
-            encoding_done = encode(None);
+impl Drop for InnerEncoder {
+    fn drop(&mut self) {
+        unsafe {
+            vvenc_encoder_close(self.encoder.as_ptr());
         }
+    }
+}
 
-        println!("encoding done!");
+impl Encoder {
+    pub fn new(mut config: Config) -> Result<Self, Error> {
+        let Some(encoder) = ptr::NonNull::new(unsafe { vvenc_encoder_create() }) else {
+            return Err(Error::Initialize);
+        };
+        let ret = unsafe { vvenc_encoder_open(encoder.as_ptr(), &mut config.inner) };
+        match ret {
+            ErrorCodes_VVENC_OK => Ok(Self {
+                inner: Arc::new(Mutex::new(InnerEncoder { encoder })),
+            }),
+            _ => Err(Error::new(ret)),
+        }
+    }
+
+    fn with_config(config: &mut vvenc_config) -> Result<Self, Error> {
+        let Some(encoder) = ptr::NonNull::new(unsafe { vvenc_encoder_create() }) else {
+            return Err(Error::Initialize);
+        };
+        let ret = unsafe { vvenc_encoder_open(encoder.as_ptr(), config) };
+        match ret {
+            ErrorCodes_VVENC_OK => Ok(Self {
+                inner: Arc::new(Mutex::new(InnerEncoder { encoder })),
+            }),
+            _ => Err(Error::new(ret)),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Config {
+    inner: vvenc_config,
+}
+
+impl Config {
+    pub fn new(
+        width: i32,
+        height: i32,
+        framerate: i32,
+        target_bitrate: i32,
+        qp: i32,
+        preset: Preset,
+    ) -> Self {
+        unsafe {
+            let mut inner = std::mem::zeroed();
+            vvenc_init_default(
+                &mut inner,
+                width,
+                height,
+                framerate,
+                target_bitrate,
+                qp,
+                preset.to_ffi(),
+            );
+            Self { inner }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Preset {
+    Faster,
+    Fast,
+    Medium,
+    Slow,
+    Slower,
+    MediumLowDecNrg,
+    FirstPass,
+    ToolTest,
+}
+
+impl Preset {
+    #[inline]
+    fn to_ffi(self) -> vvencPresetMode {
+        match self {
+            Self::Faster => vvencPresetMode_VVENC_FASTER,
+            Self::Fast => vvencPresetMode_VVENC_FAST,
+            Self::Medium => vvencPresetMode_VVENC_MEDIUM,
+            Self::Slow => vvencPresetMode_VVENC_SLOW,
+            Self::Slower => vvencPresetMode_VVENC_SLOWER,
+            Self::MediumLowDecNrg => vvencPresetMode_VVENC_MEDIUM_LOWDECNRG,
+            Self::FirstPass => vvencPresetMode_VVENC_FIRSTPASS,
+            Self::ToolTest => vvencPresetMode_VVENC_TOOLTEST,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum Error {
+    #[error("unspecified error")]
+    Unspecified,
+    #[error("failed to initialize encoder")]
+    Initialize,
+    #[error("failed to allocate resources")]
+    Allocate,
+    #[error("not enough memory")]
+    NotEnoughMemory,
+    #[error("invalid parameter")]
+    Parameter,
+    #[error("operation not supported")]
+    NotSupported,
+    #[error("restart required")]
+    RestartRequired,
+    #[error("CPU error")]
+    Cpu,
+    #[error("unknown error with code {0}")]
+    Unknown(i32),
+}
+
+impl Error {
+    fn new(code: ErrorCodes) -> Self {
+        #[allow(non_upper_case_globals)]
+        match code {
+            ErrorCodes_VVENC_ERR_UNSPECIFIED => Error::Unspecified,
+            ErrorCodes_VVENC_ERR_INITIALIZE => Error::Initialize,
+            ErrorCodes_VVENC_ERR_ALLOCATE => Error::Allocate,
+            ErrorCodes_VVENC_NOT_ENOUGH_MEM => Error::NotEnoughMemory,
+            ErrorCodes_VVENC_ERR_PARAMETER => Error::Parameter,
+            ErrorCodes_VVENC_ERR_NOT_SUPPORTED => Error::NotSupported,
+            ErrorCodes_VVENC_ERR_RESTART_REQUIRED => Error::RestartRequired,
+            ErrorCodes_VVENC_ERR_CPU => Error::Cpu,
+            code => Error::Unknown(code),
+        }
     }
 }

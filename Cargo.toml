@@ -1,16 +1,28 @@
+[workspace]
+members = ["vvenc-sys"] # , "vvencli"]
+
+[workspace.package]
+name = "vvenc"
+edition = "2021"
+rust-version = "1.80"
+repository = "https://github.com/cadubentzen/vvenc-rs"
+authors = ["Carlos Bentzen <cadubentzen@igalia.com>"]
+license = "BSD-3-Clause-Clear"
+
 [package]
 name = "vvenc"
-version = "0.0.1"
-edition = "2021"
-authors = ["Carlos Bentzen <cadubentzen@gmail.com>"]
+version = "0.1.0"
 description = "Rust bindings for VVenC"
-license = "BSD-3-Clause-Clear"
-repository = "https://github.com/cadubentzen/vvenc-rs"
+exclude = ["tests/", ".devcontainer/", ".github/"]
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+repository.workspace = true
 
 [dependencies]
-vvenc-sys = { path = "vvenc-sys", version = "0.0.1" }
-thiserror = "1.0"
-vsprintf = "2.0"
+thiserror = "2"
+vvenc-sys = { path = "./vvenc-sys", version = "0.1.0" }
 
-[workspace]
-members = ["vvenc-sys", "vvencli"]
+[features]
+vendored = ["vvenc-sys/vendored"]

@@ -1,14 +1,20 @@
 [package]
 name = "vvenc-sys"
-version = "0.0.1"
-edition = "2021"
+version = "0.1.0"
 links = "vvenc"
-authors = ["Carlos Bentzen <cadubentzen@gmail.com>"]
 description = "Rust unsafe bindings for VVenC"
-license = "BSD-3-Clause-Clear"
-repository = "https://github.com/cadubentzen/vvenc-rs"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [build-dependencies]
-bindgen = "0.66"
-cmake = "0.1"
+bindgen = "0.71"
 pkg-config = "0.3"
+cmake = { version = "0.1", optional = true }
+
+[features]
+vendored = ["dep:cmake"]
+
+[package.metadata.docs.rs]
+features = ["vendored"]
