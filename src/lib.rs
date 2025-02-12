@@ -5,9 +5,10 @@ use std::{
 
 use vvenc_sys::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Encoder {
     inner: Arc<Mutex<InnerEncoder>>,
+    au: AccessUnit,
 }
 
 #[derive(Debug)]
@@ -29,25 +30,85 @@ impl Encoder {
             return Err(Error::Initialize);
         };
         let ret = unsafe { vvenc_encoder_open(encoder.as_ptr(), &mut config.inner) };
+        #[allow(non_upper_case_globals)]
         match ret {
             ErrorCodes_VVENC_OK => Ok(Self {
                 inner: Arc::new(Mutex::new(InnerEncoder { encoder })),
+                au: AccessUnit::new(&config),
             }),
             _ => Err(Error::new(ret)),
         }
     }
 
-    fn with_config(config: &mut vvenc_config) -> Result<Self, Error> {
-        let Some(encoder) = ptr::NonNull::new(unsafe { vvenc_encoder_create() }) else {
-            return Err(Error::Initialize);
+    pub fn encode<'a>(&mut self, frame: Frame<'a>) -> Result<Option<&AccessUnit>, Error> {
+        let mut yuv_buffer = vvencYUVBuffer {
+            planes: [
+                vvencYUVPlane {
+                    ptr: frame.planes[0].data.as_ptr() as *mut i16,
+                    width: frame.planes[0].width,
+                    height: frame.planes[0].height,
+                    stride: frame.planes[0].stride,
+                },
+                vvencYUVPlane {
+                    ptr: frame.planes[1].data.as_ptr() as *mut i16,
+                    width: frame.planes[1].width,
+                    height: frame.planes[1].height,
+                    stride: frame.planes[1].stride,
+                },
+                vvencYUVPlane {
+                    ptr: frame.planes[2].data.as_ptr() as *mut i16,
+                    width: frame.planes[2].width,
+                    height: frame.planes[2].height,
+                    stride: frame.planes[2].stride,
+                },
+            ],
+            sequenceNumber: frame.sequence_number,
+            cts: frame.cts.unwrap_or(0),
+            ctsValid: frame.cts.is_some(),
         };
-        let ret = unsafe { vvenc_encoder_open(encoder.as_ptr(), config) };
-        match ret {
-            ErrorCodes_VVENC_OK => Ok(Self {
-                inner: Arc::new(Mutex::new(InnerEncoder { encoder })),
-            }),
-            _ => Err(Error::new(ret)),
+
+        let mut encode_done = false;
+        let ret = unsafe {
+            vvenc_encode(
+                self.inner.lock().unwrap().encoder.as_ptr(),
+                &mut yuv_buffer,
+                &mut self.au.inner,
+                &mut encode_done,
+            )
+        };
+
+        if ret != ErrorCodes_VVENC_OK {
+            return Err(Error::new(ret));
         }
+
+        // TODO: double check if encode_done handling is correct or if we lose a frame like that
+        if self.au.inner.payloadUsedSize == 0 {
+            return Ok(None);
+        }
+
+        Ok(Some(&self.au))
+    }
+
+    pub fn flush(&mut self) -> Result<Option<&AccessUnit>, Error> {
+        let mut encode_done = false;
+        let ret = unsafe {
+            vvenc_encode(
+                self.inner.lock().unwrap().encoder.as_ptr(),
+                std::ptr::null_mut(),
+                &mut self.au.inner,
+                &mut encode_done,
+            )
+        };
+
+        if ret != ErrorCodes_VVENC_OK {
+            return Err(Error::new(ret));
+        }
+
+        if self.au.inner.payloadUsedSize == 0 {
+            return Ok(None);
+        }
+
+        Ok(Some(&self.au))
     }
 }
 
@@ -144,6 +205,55 @@ impl Error {
             ErrorCodes_VVENC_ERR_RESTART_REQUIRED => Error::RestartRequired,
             ErrorCodes_VVENC_ERR_CPU => Error::Cpu,
             code => Error::Unknown(code),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Frame<'a> {
+    pub planes: [Plane<'a>; 3],
+    pub sequence_number: u64,
+    pub cts: Option<u64>,
+}
+
+#[derive(Debug)]
+pub struct Plane<'a> {
+    pub data: &'a [i16],
+    pub width: i32,
+    pub height: i32,
+    pub stride: i32,
+}
+
+#[derive(Debug)]
+pub struct AccessUnit {
+    // FIXME: make inner private
+    pub inner: vvencAccessUnit,
+}
+
+impl AccessUnit {
+    fn new(config: &Config) -> Self {
+        // Allocate enough space for the AU payloads from the given config. Same as in EncApp.cpp from libvvenc
+        #[allow(non_upper_case_globals)]
+        let au_size_scale = match config.inner.m_internChromaFormat {
+            vvencChromaFormat_VVENC_CHROMA_400 | vvencChromaFormat_VVENC_CHROMA_420 => 2,
+            _ => 3,
+        };
+        let payload_size =
+            au_size_scale * config.inner.m_SourceHeight * config.inner.m_SourceWidth + 1024;
+        let inner = unsafe {
+            let mut inner = std::mem::zeroed();
+            vvenc_accessUnit_default(&mut inner);
+            vvenc_accessUnit_alloc_payload(&mut inner, payload_size);
+            inner
+        };
+        Self { inner }
+    }
+}
+
+impl Drop for AccessUnit {
+    fn drop(&mut self) {
+        unsafe {
+            vvenc_accessUnit_free_payload(&mut self.inner);
         }
     }
 }
