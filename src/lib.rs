@@ -8,7 +8,6 @@ use vvenc_sys::*;
 #[derive(Debug)]
 pub struct Encoder {
     inner: Arc<Mutex<InnerEncoder>>,
-    au: AccessUnit,
 }
 
 #[derive(Debug)]
@@ -34,13 +33,16 @@ impl Encoder {
         match ret {
             ErrorCodes_VVENC_OK => Ok(Self {
                 inner: Arc::new(Mutex::new(InnerEncoder { encoder })),
-                au: AccessUnit::new(&config),
             }),
             _ => Err(Error::new(ret)),
         }
     }
 
-    pub fn encode<'a>(&mut self, frame: Frame<'a>) -> Result<Option<&AccessUnit>, Error> {
+    pub fn encode<'a, 'b>(
+        &mut self,
+        frame: Frame<'a>,
+        out_data: &'b mut [u8],
+    ) -> Result<Option<AccessUnit<'b>>, Error> {
         let mut yuv_buffer = vvencYUVBuffer {
             planes: [
                 vvencYUVPlane {
@@ -67,12 +69,13 @@ impl Encoder {
             ctsValid: frame.cts.is_some(),
         };
 
+        let mut au = AccessUnit::new(out_data);
         let mut encode_done = false;
         let ret = unsafe {
             vvenc_encode(
                 self.inner.lock().unwrap().encoder.as_ptr(),
                 &mut yuv_buffer,
-                &mut self.au.inner,
+                &mut au.inner,
                 &mut encode_done,
             )
         };
@@ -81,21 +84,17 @@ impl Encoder {
             return Err(Error::new(ret));
         }
 
-        // TODO: double check if encode_done handling is correct or if we lose a frame like that
-        if self.au.inner.payloadUsedSize == 0 {
-            return Ok(None);
-        }
-
-        Ok(Some(&self.au))
+        Ok((!au.payload().is_empty()).then_some(au))
     }
 
-    pub fn flush(&mut self) -> Result<Option<&AccessUnit>, Error> {
+    pub fn flush<'b>(&mut self, out_data: &'b mut [u8]) -> Result<Option<AccessUnit<'b>>, Error> {
+        let mut au = AccessUnit::new(out_data);
         let mut encode_done = false;
         let ret = unsafe {
             vvenc_encode(
                 self.inner.lock().unwrap().encoder.as_ptr(),
                 std::ptr::null_mut(),
-                &mut self.au.inner,
+                &mut au.inner,
                 &mut encode_done,
             )
         };
@@ -104,11 +103,32 @@ impl Encoder {
             return Err(Error::new(ret));
         }
 
-        if self.au.inner.payloadUsedSize == 0 {
-            return Ok(None);
+        Ok((!au.payload().is_empty()).then_some(au))
+    }
+
+    pub fn config(&self) -> Result<Config, Error> {
+        let mut inner = unsafe { std::mem::zeroed() };
+        let ret =
+            unsafe { vvenc_get_config(self.inner.lock().unwrap().encoder.as_ptr(), &mut inner) };
+        if ret != ErrorCodes_VVENC_OK {
+            return Err(Error::new(ret));
+        }
+        Ok(Config { inner })
+    }
+
+    pub fn reconfigure(&mut self, mut config: Config) -> Result<(), Error> {
+        let ret = unsafe {
+            vvenc_reconfig(
+                self.inner.lock().unwrap().encoder.as_ptr(),
+                &mut config.inner,
+            )
+        };
+
+        if ret != ErrorCodes_VVENC_OK {
+            return Err(Error::new(ret));
         }
 
-        Ok(Some(&self.au))
+        Ok(())
     }
 }
 
@@ -125,9 +145,9 @@ impl Config {
         target_bitrate: i32,
         qp: i32,
         preset: Preset,
-    ) -> Self {
-        unsafe {
-            let mut inner = std::mem::zeroed();
+    ) -> Result<Self, Error> {
+        let mut inner = unsafe { std::mem::zeroed() };
+        let ret = unsafe {
             vvenc_init_default(
                 &mut inner,
                 width,
@@ -136,37 +156,38 @@ impl Config {
                 target_bitrate,
                 qp,
                 preset.to_ffi(),
-            );
-            Self { inner }
+            )
+        };
+
+        if ret != ErrorCodes_VVENC_OK {
+            return Err(Error::new(ret));
         }
+
+        Ok(Self { inner })
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Preset {
-    Faster,
-    Fast,
-    Medium,
-    Slow,
-    Slower,
-    MediumLowDecNrg,
-    FirstPass,
-    ToolTest,
-}
+    pub fn source_width(&self) -> i32 {
+        self.inner.m_SourceWidth
+    }
 
-impl Preset {
-    #[inline]
-    fn to_ffi(self) -> vvencPresetMode {
-        match self {
-            Self::Faster => vvencPresetMode_VVENC_FASTER,
-            Self::Fast => vvencPresetMode_VVENC_FAST,
-            Self::Medium => vvencPresetMode_VVENC_MEDIUM,
-            Self::Slow => vvencPresetMode_VVENC_SLOW,
-            Self::Slower => vvencPresetMode_VVENC_SLOWER,
-            Self::MediumLowDecNrg => vvencPresetMode_VVENC_MEDIUM_LOWDECNRG,
-            Self::FirstPass => vvencPresetMode_VVENC_FIRSTPASS,
-            Self::ToolTest => vvencPresetMode_VVENC_TOOLTEST,
+    pub fn source_height(&self) -> i32 {
+        self.inner.m_SourceHeight
+    }
+
+    pub fn chroma_format(&self) -> ChromaFormat {
+        ChromaFormat::from_ffi(self.inner.m_internChromaFormat)
+    }
+
+    pub fn set_chroma_format(&mut self, chroma_format: ChromaFormat) {
+        self.inner.m_internChromaFormat = chroma_format.to_ffi();
+    }
+
+    pub fn set_preset(&mut self, preset: Preset) -> Result<(), Error> {
+        let ret = unsafe { vvenc_init_preset(&mut self.inner, preset.to_ffi()) };
+        if ret != ErrorCodes_VVENC_OK {
+            return Err(Error::new(ret));
         }
+        Ok(())
     }
 }
 
@@ -225,35 +246,138 @@ pub struct Plane<'a> {
 }
 
 #[derive(Debug)]
-pub struct AccessUnit {
-    // FIXME: make inner private
-    pub inner: vvencAccessUnit,
+pub struct AccessUnit<'a> {
+    inner: vvencAccessUnit,
+    data: &'a [u8],
 }
 
-impl AccessUnit {
-    fn new(config: &Config) -> Self {
-        // Allocate enough space for the AU payloads from the given config. Same as in EncApp.cpp from libvvenc
-        #[allow(non_upper_case_globals)]
-        let au_size_scale = match config.inner.m_internChromaFormat {
-            vvencChromaFormat_VVENC_CHROMA_400 | vvencChromaFormat_VVENC_CHROMA_420 => 2,
-            _ => 3,
-        };
-        let payload_size =
-            au_size_scale * config.inner.m_SourceHeight * config.inner.m_SourceWidth + 1024;
+impl<'a> AccessUnit<'a> {
+    fn new(data: &'a mut [u8]) -> Self {
         let inner = unsafe {
             let mut inner = std::mem::zeroed();
             vvenc_accessUnit_default(&mut inner);
-            vvenc_accessUnit_alloc_payload(&mut inner, payload_size);
+            inner.payload = data.as_mut_ptr();
+            inner.payloadSize = data.len() as i32;
+            inner.payloadUsedSize = 0;
             inner
         };
-        Self { inner }
+        Self { inner, data }
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        &self.data[..self.inner.payloadUsedSize as usize]
+    }
+
+    pub fn cts(&self) -> Option<u64> {
+        self.inner.ctsValid.then_some(self.inner.cts)
+    }
+
+    pub fn dts(&self) -> Option<u64> {
+        self.inner.dtsValid.then_some(self.inner.dts)
+    }
+
+    pub fn rap(&self) -> bool {
+        self.inner.rap
+    }
+
+    pub fn slice_type(&self) -> SliceType {
+        SliceType::from_ffi(self.inner.sliceType)
+    }
+
+    pub fn is_ref_pic(&self) -> bool {
+        self.inner.refPic
+    }
+
+    pub fn temporal_layer(&self) -> i32 {
+        self.inner.temporalLayer
+    }
+
+    pub fn poc(&self) -> u64 {
+        self.inner.poc
     }
 }
 
-impl Drop for AccessUnit {
-    fn drop(&mut self) {
-        unsafe {
-            vvenc_accessUnit_free_payload(&mut self.inner);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Preset {
+    Faster,
+    Fast,
+    Medium,
+    Slow,
+    Slower,
+    MediumLowDecNrg,
+    FirstPass,
+    ToolTest,
+    Unknown(i32),
+}
+
+impl Preset {
+    #[inline]
+    fn to_ffi(self) -> vvencPresetMode {
+        match self {
+            Self::Faster => vvencPresetMode_VVENC_FASTER,
+            Self::Fast => vvencPresetMode_VVENC_FAST,
+            Self::Medium => vvencPresetMode_VVENC_MEDIUM,
+            Self::Slow => vvencPresetMode_VVENC_SLOW,
+            Self::Slower => vvencPresetMode_VVENC_SLOWER,
+            Self::MediumLowDecNrg => vvencPresetMode_VVENC_MEDIUM_LOWDECNRG,
+            Self::FirstPass => vvencPresetMode_VVENC_FIRSTPASS,
+            Self::ToolTest => vvencPresetMode_VVENC_TOOLTEST,
+            Self::Unknown(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ChromaFormat {
+    Chroma400,
+    Chroma420,
+    Chroma422,
+    Chroma444,
+    Unknown(u32),
+}
+
+impl ChromaFormat {
+    #[inline]
+    fn to_ffi(self) -> vvencChromaFormat {
+        match self {
+            Self::Chroma400 => vvencChromaFormat_VVENC_CHROMA_400,
+            Self::Chroma420 => vvencChromaFormat_VVENC_CHROMA_420,
+            Self::Chroma422 => vvencChromaFormat_VVENC_CHROMA_422,
+            Self::Chroma444 => vvencChromaFormat_VVENC_CHROMA_444,
+            Self::Unknown(value) => value,
+        }
+    }
+
+    #[inline]
+    fn from_ffi(value: vvencChromaFormat) -> Self {
+        #[allow(non_upper_case_globals)]
+        match value {
+            vvencChromaFormat_VVENC_CHROMA_400 => Self::Chroma400,
+            vvencChromaFormat_VVENC_CHROMA_420 => Self::Chroma420,
+            vvencChromaFormat_VVENC_CHROMA_422 => Self::Chroma422,
+            vvencChromaFormat_VVENC_CHROMA_444 => Self::Chroma444,
+            _ => Self::Unknown(value),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SliceType {
+    B,
+    P,
+    I,
+    Unknown(u32),
+}
+
+impl SliceType {
+    #[inline]
+    fn from_ffi(value: vvencSliceType) -> Self {
+        #[allow(non_upper_case_globals)]
+        match value {
+            vvencSliceType_VVENC_B_SLICE => Self::B,
+            vvencSliceType_VVENC_P_SLICE => Self::P,
+            vvencSliceType_VVENC_I_SLICE => Self::I,
+            _ => Self::Unknown(value),
         }
     }
 }
