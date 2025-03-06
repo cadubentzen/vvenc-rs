@@ -10,6 +10,9 @@ pub struct Encoder {
     inner: Arc<Mutex<InnerEncoder>>,
 }
 
+unsafe impl Sync for Encoder {}
+unsafe impl Send for Encoder {}
+
 #[derive(Debug)]
 struct InnerEncoder {
     encoder: ptr::NonNull<vvencEncoder>,
@@ -230,14 +233,14 @@ impl Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Frame<'a> {
     pub planes: [Plane<'a>; 3],
     pub sequence_number: u64,
     pub cts: Option<u64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Plane<'a> {
     pub data: &'a [i16],
     pub width: i32,

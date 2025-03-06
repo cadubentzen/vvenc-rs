@@ -45,7 +45,10 @@ fn basic() {
         cts: None,
     };
 
+    assert!(encoder.encode(frame.clone(), &mut data).unwrap().is_none());
     assert!(encoder.encode(frame, &mut data).unwrap().is_none());
+    let au = encoder.flush(&mut data).unwrap().unwrap();
+    assert!(au.payload().len() > 0);
     let au = encoder.flush(&mut data).unwrap().unwrap();
     assert!(au.payload().len() > 0);
     assert!(encoder.flush(&mut data).unwrap_err() == Error::RestartRequired);
