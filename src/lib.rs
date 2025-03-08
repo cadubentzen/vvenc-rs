@@ -1,4 +1,5 @@
 use std::{
+    ffi::c_void,
     ptr,
     sync::{Arc, Mutex},
 };
@@ -26,12 +27,14 @@ impl Drop for InnerEncoder {
     }
 }
 
+pub type EncodeDone = bool;
+
 impl Encoder {
-    pub fn new(mut config: Config) -> Result<Self, Error> {
+    pub fn with_config(config: &Config) -> Result<Self, Error> {
         let Some(encoder) = ptr::NonNull::new(unsafe { vvenc_encoder_create() }) else {
             return Err(Error::Initialize);
         };
-        let ret = unsafe { vvenc_encoder_open(encoder.as_ptr(), &mut config.inner) };
+        let ret = unsafe { vvenc_encoder_open(encoder.as_ptr(), &mut config.to_ffi()?) };
         #[allow(non_upper_case_globals)]
         match ret {
             ErrorCodes_VVENC_OK => Ok(Self {
@@ -41,43 +44,17 @@ impl Encoder {
         }
     }
 
-    pub fn encode<'a, 'b>(
+    pub fn encode<'b>(
         &mut self,
-        frame: Frame<'a>,
+        yuv_buffer: &mut YUVBuffer,
         out_data: &'b mut [u8],
     ) -> Result<Option<AccessUnit<'b>>, Error> {
-        let mut yuv_buffer = vvencYUVBuffer {
-            planes: [
-                vvencYUVPlane {
-                    ptr: frame.planes[0].data.as_ptr() as *mut i16,
-                    width: frame.planes[0].width,
-                    height: frame.planes[0].height,
-                    stride: frame.planes[0].stride,
-                },
-                vvencYUVPlane {
-                    ptr: frame.planes[1].data.as_ptr() as *mut i16,
-                    width: frame.planes[1].width,
-                    height: frame.planes[1].height,
-                    stride: frame.planes[1].stride,
-                },
-                vvencYUVPlane {
-                    ptr: frame.planes[2].data.as_ptr() as *mut i16,
-                    width: frame.planes[2].width,
-                    height: frame.planes[2].height,
-                    stride: frame.planes[2].stride,
-                },
-            ],
-            sequenceNumber: frame.sequence_number,
-            cts: frame.cts.unwrap_or(0),
-            ctsValid: frame.cts.is_some(),
-        };
-
         let mut au = AccessUnit::new(out_data);
         let mut encode_done = false;
         let ret = unsafe {
             vvenc_encode(
                 self.inner.lock().unwrap().encoder.as_ptr(),
-                &mut yuv_buffer,
+                &mut yuv_buffer.inner,
                 &mut au.inner,
                 &mut encode_done,
             )
@@ -90,7 +67,10 @@ impl Encoder {
         Ok((!au.payload().is_empty()).then_some(au))
     }
 
-    pub fn flush<'b>(&mut self, out_data: &'b mut [u8]) -> Result<Option<AccessUnit<'b>>, Error> {
+    pub fn flush<'b>(
+        &mut self,
+        out_data: &'b mut [u8],
+    ) -> Result<Option<(AccessUnit<'b>, EncodeDone)>, Error> {
         let mut au = AccessUnit::new(out_data);
         let mut encode_done = false;
         let ret = unsafe {
@@ -106,24 +86,14 @@ impl Encoder {
             return Err(Error::new(ret));
         }
 
-        Ok((!au.payload().is_empty()).then_some(au))
+        Ok((!au.payload().is_empty()).then_some((au, encode_done)))
     }
 
-    pub fn config(&self) -> Result<Config, Error> {
-        let mut inner = unsafe { std::mem::zeroed() };
-        let ret =
-            unsafe { vvenc_get_config(self.inner.lock().unwrap().encoder.as_ptr(), &mut inner) };
-        if ret != ErrorCodes_VVENC_OK {
-            return Err(Error::new(ret));
-        }
-        Ok(Config { inner })
-    }
-
-    pub fn reconfigure(&mut self, mut config: Config) -> Result<(), Error> {
+    pub fn reconfigure(&mut self, config: &Config) -> Result<(), Error> {
         let ret = unsafe {
             vvenc_reconfig(
                 self.inner.lock().unwrap().encoder.as_ptr(),
-                &mut config.inner,
+                &mut config.to_ffi()?,
             )
         };
 
@@ -136,61 +106,55 @@ impl Encoder {
 }
 
 #[derive(Debug)]
+pub struct Rational {
+    pub num: i32,
+    pub den: i32,
+}
+
+#[derive(Debug)]
+pub struct Qp(u8);
+
+impl Qp {
+    pub fn new(value: u8) -> Result<Self, Error> {
+        if value > 63 {
+            return Err(Error::Parameter);
+        }
+        Ok(Self(value))
+    }
+}
+
+#[derive(Debug)]
 pub struct Config {
-    inner: vvenc_config,
+    pub width: i32,
+    pub height: i32,
+    pub framerate: Rational,
+    pub qp: Qp,
+    pub chroma_format: ChromaFormat,
+    pub preset: Preset,
 }
 
 impl Config {
-    pub fn new(
-        width: i32,
-        height: i32,
-        framerate: i32,
-        target_bitrate: i32,
-        qp: i32,
-        preset: Preset,
-    ) -> Result<Self, Error> {
-        let mut inner = unsafe { std::mem::zeroed() };
+    fn to_ffi(&self) -> Result<vvenc_config, Error> {
+        let mut vvenc_cfg = unsafe { std::mem::zeroed() };
+
         let ret = unsafe {
             vvenc_init_default(
-                &mut inner,
-                width,
-                height,
-                framerate,
-                target_bitrate,
-                qp,
-                preset.to_ffi(),
+                &mut vvenc_cfg,
+                self.width,
+                self.height,
+                // vvenc_init_default handles fractional framerates by manually
+                // checking for values of 23, 29, 59 and 119 here :shrug:
+                (self.framerate.num / self.framerate.den) as i32,
+                VVENC_RC_OFF as i32,
+                self.qp.0 as i32,
+                self.preset.to_ffi(),
             )
         };
-
         if ret != ErrorCodes_VVENC_OK {
             return Err(Error::new(ret));
         }
 
-        Ok(Self { inner })
-    }
-
-    pub fn source_width(&self) -> i32 {
-        self.inner.m_SourceWidth
-    }
-
-    pub fn source_height(&self) -> i32 {
-        self.inner.m_SourceHeight
-    }
-
-    pub fn chroma_format(&self) -> ChromaFormat {
-        ChromaFormat::from_ffi(self.inner.m_internChromaFormat)
-    }
-
-    pub fn set_chroma_format(&mut self, chroma_format: ChromaFormat) {
-        self.inner.m_internChromaFormat = chroma_format.to_ffi();
-    }
-
-    pub fn set_preset(&mut self, preset: Preset) -> Result<(), Error> {
-        let ret = unsafe { vvenc_init_preset(&mut self.inner, preset.to_ffi()) };
-        if ret != ErrorCodes_VVENC_OK {
-            return Err(Error::new(ret));
-        }
-        Ok(())
+        Ok(vvenc_cfg)
     }
 }
 
@@ -234,18 +198,111 @@ impl Error {
 }
 
 #[derive(Debug, Clone)]
-pub struct Frame<'a> {
-    pub planes: [Plane<'a>; 3],
-    pub sequence_number: u64,
-    pub cts: Option<u64>,
+pub struct YUVBuffer {
+    inner: vvencYUVBuffer,
+}
+
+// TODO: check if this is safe
+unsafe impl Send for YUVBuffer {}
+unsafe impl Sync for YUVBuffer {}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(usize)]
+pub enum YUVComponent {
+    Y = 0,
+    U = 1,
+    V = 2,
+}
+
+impl YUVBuffer {
+    pub fn new(width: i32, height: i32, chroma_format: ChromaFormat) -> Self {
+        let inner = unsafe {
+            let mut inner = std::mem::zeroed();
+            vvenc_YUVBuffer_alloc_buffer(&mut inner, chroma_format.to_ffi(), width, height);
+            inner
+        };
+        Self { inner }
+    }
+
+    pub fn plane_mut<'a>(&'a mut self, component: YUVComponent) -> Plane<'a> {
+        Plane {
+            inner: self.inner.planes[component as usize],
+            phantom: std::marker::PhantomData::default(),
+        }
+    }
+
+    pub fn sequence_number(&self) -> u64 {
+        self.inner.sequenceNumber
+    }
+
+    pub fn set_sequence_number(&mut self, sequence_number: u64) {
+        self.inner.sequenceNumber = sequence_number;
+    }
+
+    pub fn cts(&self) -> Option<u64> {
+        self.inner.ctsValid.then_some(self.inner.cts)
+    }
+
+    pub fn set_cts(&mut self, cts: u64) {
+        self.inner.cts = cts;
+        self.inner.ctsValid = true;
+    }
+
+    pub unsafe fn take_opaque<T: Sized>(&mut self) -> Box<T> {
+        let raw = self.inner.opaque;
+        self.inner.opaque = ptr::null_mut();
+        Box::from_raw(raw as *mut T)
+    }
+
+    pub fn set_opaque<T: Sized>(&mut self, opaque: Box<T>) {
+        self.inner.opaque = Box::into_raw(opaque) as *mut c_void;
+    }
+}
+
+impl Drop for YUVBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            vvenc_YUVBuffer_free_buffer(&mut self.inner);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Plane<'a> {
-    pub data: &'a [i16],
-    pub width: i32,
-    pub height: i32,
-    pub stride: i32,
+    inner: vvencYUVPlane,
+    phantom: std::marker::PhantomData<&'a [i16]>,
+}
+
+impl<'a> Plane<'a> {
+    pub fn data(&mut self) -> &[i16] {
+        unsafe {
+            std::slice::from_raw_parts(
+                self.inner.ptr,
+                self.inner.height as usize * self.inner.stride as usize,
+            )
+        }
+    }
+
+    pub fn data_mut(&mut self) -> &mut [i16] {
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                self.inner.ptr,
+                self.inner.height as usize * self.inner.stride as usize,
+            )
+        }
+    }
+
+    pub fn width(&self) -> i32 {
+        self.inner.width
+    }
+
+    pub fn height(&self) -> i32 {
+        self.inner.height
+    }
+
+    pub fn stride(&self) -> i32 {
+        self.inner.stride
+    }
 }
 
 #[derive(Debug)]
@@ -297,6 +354,12 @@ impl<'a> AccessUnit<'a> {
 
     pub fn poc(&self) -> u64 {
         self.inner.poc
+    }
+
+    pub unsafe fn take_opaque<T: Sized>(&mut self) -> Box<T> {
+        let raw = self.inner.opaque;
+        self.inner.opaque = ptr::null_mut();
+        Box::from_raw(raw as *mut T)
     }
 }
 
