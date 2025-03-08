@@ -153,6 +153,7 @@ impl Config {
         if ret != ErrorCodes_VVENC_OK {
             return Err(Error::new(ret));
         }
+        vvenc_cfg.m_internChromaFormat = self.chroma_format.to_ffi();
 
         Ok(vvenc_cfg)
     }
