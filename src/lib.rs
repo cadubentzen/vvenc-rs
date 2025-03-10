@@ -8,12 +8,13 @@ use vsprintf::vsprintf;
 use vvenc_sys::*;
 
 #[derive(Debug)]
-pub struct Encoder {
+pub struct Encoder<Opaque> {
     inner: Arc<Mutex<InnerEncoder>>,
+    _phantom: std::marker::PhantomData<Opaque>,
 }
 
-unsafe impl Sync for Encoder {}
-unsafe impl Send for Encoder {}
+unsafe impl<Opaque> Sync for Encoder<Opaque> {}
+unsafe impl<Opaque> Send for Encoder<Opaque> {}
 
 #[derive(Debug)]
 struct InnerEncoder {
@@ -30,7 +31,7 @@ impl Drop for InnerEncoder {
 
 pub type EncodeDone = bool;
 
-impl Encoder {
+impl<Opaque: Sized + Sync + Send> Encoder<Opaque> {
     pub fn with_config(config: &mut Config) -> Result<Self, Error> {
         let Some(encoder) = ptr::NonNull::new(unsafe { vvenc_encoder_create() }) else {
             return Err(Error::Initialize);
@@ -40,6 +41,7 @@ impl Encoder {
         match ret {
             ErrorCodes_VVENC_OK => Ok(Self {
                 inner: Arc::new(Mutex::new(InnerEncoder { encoder })),
+                _phantom: std::marker::PhantomData::default(),
             }),
             _ => Err(Error::new(ret)),
         }
@@ -47,9 +49,9 @@ impl Encoder {
 
     pub fn encode<'b>(
         &mut self,
-        yuv_buffer: &mut YUVBuffer,
+        yuv_buffer: &mut YUVBuffer<Opaque>,
         out_data: &'b mut [u8],
-    ) -> Result<Option<AccessUnit<'b>>, Error> {
+    ) -> Result<Option<AccessUnit<'b, Opaque>>, Error> {
         let mut au = AccessUnit::new(out_data);
         let mut encode_done = false;
         let ret = unsafe {
@@ -71,7 +73,7 @@ impl Encoder {
     pub fn flush<'b>(
         &mut self,
         out_data: &'b mut [u8],
-    ) -> Result<Option<(AccessUnit<'b>, EncodeDone)>, Error> {
+    ) -> Result<Option<(AccessUnit<'b, Opaque>, EncodeDone)>, Error> {
         let mut au = AccessUnit::new(out_data);
         let mut encode_done = false;
         let ret = unsafe {
@@ -200,7 +202,7 @@ impl Config {
                 self.width,
                 self.height,
                 // vvenc_init_default handles fractional framerates by manually
-                // checking for values of 23, 29, 59 and 119 here :shrug:
+                // checking for values of 23, 29, 59 and 119... sigh
                 (self.framerate.num / self.framerate.den) as i32,
                 VVENC_RC_OFF as i32,
                 self.qp.0 as i32,
@@ -267,13 +269,14 @@ impl Error {
 }
 
 #[derive(Debug, Clone)]
-pub struct YUVBuffer {
+pub struct YUVBuffer<Opaque> {
     inner: vvencYUVBuffer,
+    _phantom: std::marker::PhantomData<Opaque>,
 }
 
-// TODO: check if this is safe
-unsafe impl Send for YUVBuffer {}
-unsafe impl Sync for YUVBuffer {}
+// TODO: check if this is safe wrt to inner
+unsafe impl<Opaque> Send for YUVBuffer<Opaque> {}
+unsafe impl<Opaque> Sync for YUVBuffer<Opaque> {}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(usize)]
@@ -283,14 +286,18 @@ pub enum YUVComponent {
     V = 2,
 }
 
-impl YUVBuffer {
+impl<Opaque: Sized + Send + Sync> YUVBuffer<Opaque> {
     pub fn new(width: i32, height: i32, chroma_format: ChromaFormat) -> Self {
-        let inner = unsafe {
+        let mut inner = unsafe {
             let mut inner = std::mem::zeroed();
             vvenc_YUVBuffer_alloc_buffer(&mut inner, chroma_format.to_ffi(), width, height);
             inner
         };
-        Self { inner }
+        inner.opaque = ptr::null_mut();
+        Self {
+            inner,
+            _phantom: std::marker::PhantomData::default(),
+        }
     }
 
     pub fn plane_mut<'a>(&'a mut self, component: YUVComponent) -> Plane<'a> {
@@ -317,18 +324,12 @@ impl YUVBuffer {
         self.inner.ctsValid = true;
     }
 
-    pub unsafe fn take_opaque<T: Sized>(&mut self) -> Box<T> {
-        let raw = self.inner.opaque;
-        self.inner.opaque = ptr::null_mut();
-        Box::from_raw(raw as *mut T)
-    }
-
-    pub fn set_opaque<T: Sized>(&mut self, opaque: Box<T>) {
-        self.inner.opaque = Box::into_raw(opaque) as *mut c_void;
+    pub fn set_opaque(&mut self, opaque: Opaque) {
+        self.inner.opaque = Box::into_raw(Box::new(opaque)) as *mut c_void;
     }
 }
 
-impl Drop for YUVBuffer {
+impl<Opaque> Drop for YUVBuffer<Opaque> {
     fn drop(&mut self) {
         unsafe {
             vvenc_YUVBuffer_free_buffer(&mut self.inner);
@@ -375,12 +376,13 @@ impl<'a> Plane<'a> {
 }
 
 #[derive(Debug)]
-pub struct AccessUnit<'a> {
+pub struct AccessUnit<'a, Opaque> {
     inner: vvencAccessUnit,
     data: &'a [u8],
+    _phantom: std::marker::PhantomData<Opaque>,
 }
 
-impl<'a> AccessUnit<'a> {
+impl<'a, Opaque: Sized + Sync + Send> AccessUnit<'a, Opaque> {
     fn new(data: &'a mut [u8]) -> Self {
         let inner = unsafe {
             let mut inner = std::mem::zeroed();
@@ -390,7 +392,11 @@ impl<'a> AccessUnit<'a> {
             inner.payloadUsedSize = 0;
             inner
         };
-        Self { inner, data }
+        Self {
+            inner,
+            data,
+            _phantom: std::marker::PhantomData::default(),
+        }
     }
 
     pub fn payload(&self) -> &[u8] {
@@ -425,10 +431,12 @@ impl<'a> AccessUnit<'a> {
         self.inner.poc
     }
 
-    pub unsafe fn take_opaque<T: Sized>(&mut self) -> Box<T> {
+    pub fn take_opaque(&mut self) -> Box<Opaque> {
         let raw = self.inner.opaque;
         self.inner.opaque = ptr::null_mut();
-        Box::from_raw(raw as *mut T)
+        // SAFETY: AccessUnit is only created from an Encoder with Opaque type, forcing the corresponding
+        // input YUV buffer to have Opaque types as well.
+        unsafe { Box::from_raw(raw as *mut Opaque) }
     }
 }
 

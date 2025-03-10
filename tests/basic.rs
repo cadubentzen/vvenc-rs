@@ -50,22 +50,25 @@ fn basic() {
         .data_mut()
         .copy_from_slice(&v);
 
-    buffer.set_opaque(Box::new(1234u64));
+    buffer.set_cts(0);
+    buffer.set_opaque(1234u64);
     assert!(encoder.encode(&mut buffer, &mut data).unwrap().is_none());
 
-    buffer.set_opaque(Box::new(5678u64));
+    buffer.set_cts(1);
+    buffer.set_opaque(5678u64);
     assert!(encoder.encode(&mut buffer, &mut data).unwrap().is_none());
     let (mut au, encode_done) = encoder.flush(&mut data).unwrap().unwrap();
     // println!("AU: {:?}", au);
     assert!(au.payload().len() > 0);
     assert!(!encode_done);
-    assert_eq!(unsafe { *au.take_opaque::<u64>() }, 5678u64);
-    // assert_eq!(au.poc(), 1); //1234);
+    assert_eq!(*au.take_opaque(), 5678u64);
+    assert_eq!(au.cts().unwrap(), 1);
     // assert_eq!(au.cts().unwrap(), 0);
     let (mut au, encode_done) = encoder.flush(&mut data).unwrap().unwrap();
     // println!("AU: {:?}", au);
     assert!(au.payload().len() > 0);
     assert!(encode_done);
-    assert_eq!(unsafe { *au.take_opaque::<u64>() }, 1234u64);
+    assert_eq!(*au.take_opaque(), 1234u64);
+    assert_eq!(au.cts().unwrap(), 0);
     assert!(encoder.flush(&mut data).unwrap_err() == Error::RestartRequired);
 }
