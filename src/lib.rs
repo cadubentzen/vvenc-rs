@@ -212,7 +212,13 @@ impl Config {
         if ret != ErrorCodes_VVENC_OK {
             return Err(Error::new(ret));
         }
-        vvenc_cfg.m_internChromaFormat = self.chroma_format.to_ffi();
+
+        // VVenC only supports 420 (the default) or 400 as internal chroma formats.
+        // If we're using 400, we need to set it here.
+        if self.chroma_format == ChromaFormat::Chroma400 {
+            vvenc_cfg.m_internChromaFormat = self.chroma_format.to_ffi();
+        }
+
         if let Some(logger) = self.logger.take() {
             vvenc_cfg.m_verbosity = logger.log_level().to_ffi();
             let logger = Box::new(logger);
