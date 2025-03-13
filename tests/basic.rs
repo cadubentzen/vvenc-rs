@@ -3,10 +3,6 @@ use vvenc::*;
 struct BasicLogger;
 
 impl Logger for BasicLogger {
-    fn log_level(&self) -> LogLevel {
-        LogLevel::Verbose
-    }
-
     fn log(&self, level: LogLevel, message: &str) {
         println!("{:?}: {}", level, message);
     }
@@ -18,16 +14,19 @@ fn basic() {
     const HEIGHT: i32 = 120;
     const CHROMA_FORMAT: ChromaFormat = ChromaFormat::Chroma420;
 
-    let mut config = Config {
-        width: WIDTH,
-        height: HEIGHT,
-        framerate: Rational { num: 30, den: 1 },
-        qp: Qp::new(32).unwrap(),
-        chroma_format: CHROMA_FORMAT,
-        preset: Preset::Faster,
-        logger: Some(Box::new(BasicLogger)),
-    };
-    let mut encoder = Encoder::with_config(&mut config).unwrap();
+    let mut config = Config::default();
+    config
+        .set_width(WIDTH)
+        .set_height(HEIGHT)
+        .set_framerate(Rational { num: 30, den: 1 })
+        .set_qp(Qp::new(32).unwrap())
+        .set_internal_chroma_format(CHROMA_FORMAT)
+        .set_log_level(LogLevel::Details)
+        .set_logger(Box::new(BasicLogger))
+        .set_preset(Preset::Faster)
+        .unwrap();
+
+    let mut encoder = Encoder::with_config(config).unwrap();
     let mut data = vec![0u8; (2 * WIDTH * HEIGHT + 1024) as usize];
 
     let y_size = (WIDTH * HEIGHT) as usize;
