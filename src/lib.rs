@@ -578,6 +578,15 @@ impl Config {
         self
     }
 
+    pub fn output_bit_depth(&self) -> [i32; 2] {
+        self.inner.m_outputBitDepth
+    }
+
+    pub fn set_output_bit_depth(&mut self, output_bit_depth: [i32; 2]) -> &mut Self {
+        self.inner.m_outputBitDepth = output_bit_depth;
+        self
+    }
+
     pub fn num_threads(&self) -> i32 {
         self.inner.m_numThreads
     }
@@ -833,6 +842,7 @@ pub struct YUVBuffer<Opaque> {
     inner: vvencYUVBuffer,
     _phantom: std::marker::PhantomData<Opaque>,
     opaque: Option<Box<Opaque>>,
+    owned: bool,
 }
 
 unsafe impl<Opaque> Send for YUVBuffer<Opaque> {}
@@ -847,6 +857,23 @@ pub enum YUVComponent {
 }
 
 impl<Opaque: Sized + Send + Sync> YUVBuffer<Opaque> {
+    pub fn from_planes(planes: &[Plane]) -> Self {
+        let inner = unsafe {
+            let mut inner: vvencYUVBuffer = std::mem::zeroed();
+            for (i, plane) in planes.iter().enumerate() {
+                inner.planes[i] = plane.inner;
+            }
+            inner
+        };
+        // inner.opaque = ptr::null_mut();
+        Self {
+            inner,
+            _phantom: std::marker::PhantomData::default(),
+            opaque: None,
+            owned: false,
+        }
+    }
+
     pub fn new(width: i32, height: i32, chroma_format: ChromaFormat) -> Self {
         let inner = unsafe {
             let mut inner = std::mem::zeroed();
@@ -858,7 +885,12 @@ impl<Opaque: Sized + Send + Sync> YUVBuffer<Opaque> {
             inner,
             _phantom: std::marker::PhantomData::default(),
             opaque: None,
+            owned: true,
         }
+    }
+
+    pub fn is_owned(&self) -> bool {
+        self.owned
     }
 
     pub fn plane_mut<'a>(&'a mut self, component: YUVComponent) -> Plane<'a> {
@@ -896,8 +928,10 @@ impl<Opaque: Sized + Send + Sync> YUVBuffer<Opaque> {
 
 impl<Opaque> Drop for YUVBuffer<Opaque> {
     fn drop(&mut self) {
-        unsafe {
-            vvenc_YUVBuffer_free_buffer(&mut self.inner);
+        if self.owned {
+            unsafe {
+                vvenc_YUVBuffer_free_buffer(&mut self.inner);
+            }
         }
     }
 }
@@ -909,6 +943,21 @@ pub struct Plane<'a> {
 }
 
 impl<'a> Plane<'a> {
+    pub fn from_slice(buf: &'a [i16], width: i32, height: i32, stride: i32) -> Self {
+        let inner = unsafe {
+            let mut inner: vvencYUVPlane = std::mem::zeroed();
+            inner.ptr = buf.as_ptr() as *mut i16;
+            inner.width = width;
+            inner.height = height;
+            inner.stride = stride;
+            inner
+        };
+        Self {
+            inner,
+            phantom: std::marker::PhantomData,
+        }
+    }
+
     pub fn data(&mut self) -> &[i16] {
         unsafe {
             std::slice::from_raw_parts(
