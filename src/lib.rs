@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     ffi::c_void,
     path::Path,
     ptr,
@@ -12,6 +13,9 @@ use vvenc_sys::*;
 pub struct Encoder<Opaque> {
     inner: Arc<Mutex<InnerEncoder>>,
     _phantom: std::marker::PhantomData<Opaque>,
+    // FIXME: this aux map shouldn't be needed when
+    // https://github.com/fraunhoferhhi/vvenc/pull/513 gets into a stable VVenC release.
+    cts_opaque_map: HashMap<u64, Box<Opaque>>,
 }
 
 unsafe impl<Opaque> Sync for Encoder<Opaque> {}
@@ -43,6 +47,7 @@ impl<Opaque: Sized + Sync + Send> Encoder<Opaque> {
             ErrorCodes_VVENC_OK => Ok(Self {
                 inner: Arc::new(Mutex::new(InnerEncoder { encoder })),
                 _phantom: std::marker::PhantomData::default(),
+                cts_opaque_map: HashMap::new(),
             }),
             _ => Err(Error::new(ret)),
         }
@@ -71,6 +76,12 @@ impl<Opaque: Sized + Sync + Send> Encoder<Opaque> {
         yuv_buffer: &mut YUVBuffer<Opaque>,
         out_data: &'b mut [u8],
     ) -> Result<Option<AccessUnit<'b, Opaque>>, Error> {
+        if let Some(cts) = yuv_buffer.cts() {
+            if let Some(opaque) = yuv_buffer.opaque.take() {
+                self.cts_opaque_map.insert(cts, opaque);
+            }
+        }
+
         let mut au = AccessUnit::new(out_data);
         let mut encode_done = false;
         let ret = unsafe {
@@ -86,7 +97,14 @@ impl<Opaque: Sized + Sync + Send> Encoder<Opaque> {
             return Err(Error::new(ret));
         }
 
-        Ok((!au.payload().is_empty()).then_some(au))
+        Ok((!au.payload().is_empty()).then(|| {
+            if let Some(cts) = au.cts() {
+                if let Some(opaque) = self.cts_opaque_map.remove(&cts) {
+                    au.set_opaque(opaque);
+                }
+            }
+            au
+        }))
     }
 
     pub fn flush<'b>(
@@ -108,7 +126,14 @@ impl<Opaque: Sized + Sync + Send> Encoder<Opaque> {
             return Err(Error::new(ret));
         }
 
-        Ok((!au.payload().is_empty()).then_some((au, encode_done)))
+        Ok((!au.payload().is_empty()).then(|| {
+            if let Some(cts) = au.cts() {
+                if let Some(opaque) = self.cts_opaque_map.remove(&cts) {
+                    au.set_opaque(opaque);
+                }
+            }
+            (au, encode_done)
+        }))
     }
 
     pub fn config(&self) -> Config {
@@ -807,9 +832,9 @@ impl Error {
 pub struct YUVBuffer<Opaque> {
     inner: vvencYUVBuffer,
     _phantom: std::marker::PhantomData<Opaque>,
+    opaque: Option<Box<Opaque>>,
 }
 
-// TODO: check if this is safe wrt to inner
 unsafe impl<Opaque> Send for YUVBuffer<Opaque> {}
 unsafe impl<Opaque> Sync for YUVBuffer<Opaque> {}
 
@@ -823,15 +848,16 @@ pub enum YUVComponent {
 
 impl<Opaque: Sized + Send + Sync> YUVBuffer<Opaque> {
     pub fn new(width: i32, height: i32, chroma_format: ChromaFormat) -> Self {
-        let mut inner = unsafe {
+        let inner = unsafe {
             let mut inner = std::mem::zeroed();
             vvenc_YUVBuffer_alloc_buffer(&mut inner, chroma_format.to_ffi(), width, height);
             inner
         };
-        inner.opaque = ptr::null_mut();
+        // inner.opaque = ptr::null_mut();
         Self {
             inner,
             _phantom: std::marker::PhantomData::default(),
+            opaque: None,
         }
     }
 
@@ -859,8 +885,12 @@ impl<Opaque: Sized + Send + Sync> YUVBuffer<Opaque> {
         self.inner.ctsValid = true;
     }
 
+    // pub fn set_opaque(&mut self, opaque: Opaque) {
+    //     self.inner.opaque = Box::into_raw(Box::new(opaque)) as *mut c_void;
+    // }
+
     pub fn set_opaque(&mut self, opaque: Opaque) {
-        self.inner.opaque = Box::into_raw(Box::new(opaque)) as *mut c_void;
+        self.opaque = Some(Box::new(opaque));
     }
 }
 
@@ -915,6 +945,7 @@ pub struct AccessUnit<'a, Opaque> {
     inner: vvencAccessUnit,
     data: &'a [u8],
     _phantom: std::marker::PhantomData<Opaque>,
+    opaque: Option<Box<Opaque>>,
 }
 
 impl<'a, Opaque: Sized + Sync + Send> AccessUnit<'a, Opaque> {
@@ -931,6 +962,7 @@ impl<'a, Opaque: Sized + Sync + Send> AccessUnit<'a, Opaque> {
             inner,
             data,
             _phantom: std::marker::PhantomData::default(),
+            opaque: None,
         }
     }
 
@@ -966,12 +998,20 @@ impl<'a, Opaque: Sized + Sync + Send> AccessUnit<'a, Opaque> {
         self.inner.poc
     }
 
-    pub fn take_opaque(&mut self) -> Box<Opaque> {
-        let raw = self.inner.opaque;
-        self.inner.opaque = ptr::null_mut();
-        // SAFETY: AccessUnit is only created from an Encoder with Opaque type, forcing the corresponding
-        // input YUV buffer to have Opaque types as well.
-        unsafe { Box::from_raw(raw as *mut Opaque) }
+    // pub fn take_opaque(&mut self) -> Box<Opaque> {
+    //     let raw = self.inner.opaque;
+    //     self.inner.opaque = ptr::null_mut();
+    //     // SAFETY: AccessUnit is only created from an Encoder with Opaque type, forcing the corresponding
+    //     // input YUV buffer to have Opaque types as well.
+    //     unsafe { Box::from_raw(raw as *mut Opaque) }
+    // }
+
+    pub fn take_opaque(&mut self) -> Option<Box<Opaque>> {
+        self.opaque.take()
+    }
+
+    pub fn set_opaque(&mut self, opaque: Box<Opaque>) {
+        self.opaque = Some(opaque);
     }
 }
 

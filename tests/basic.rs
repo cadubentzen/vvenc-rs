@@ -60,14 +60,14 @@ fn basic() {
     // println!("AU: {:?}", au);
     assert!(au.payload().len() > 0);
     assert!(!encode_done);
-    assert_eq!(*au.take_opaque(), 5678u64);
+    assert_eq!(*au.take_opaque().unwrap(), 5678u64);
     assert_eq!(au.cts().unwrap(), 1);
     // assert_eq!(au.cts().unwrap(), 0);
     let (mut au, encode_done) = encoder.flush(&mut data).unwrap().unwrap();
     // println!("AU: {:?}", au);
     assert!(au.payload().len() > 0);
     assert!(encode_done);
-    assert_eq!(*au.take_opaque(), 1234u64);
+    assert_eq!(*au.take_opaque().unwrap(), 1234u64);
     assert_eq!(au.cts().unwrap(), 0);
     assert!(encoder.flush(&mut data).unwrap_err() == Error::RestartRequired);
 }
